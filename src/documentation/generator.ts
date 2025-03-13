@@ -32,6 +32,11 @@ export interface DocumentationResult {
    * Whether this was a fresh generation or an update
    */
   isUpdate: boolean;
+
+  /**
+   * Whether generation was skipped (for existing files when updateExisting is false)
+   */
+  skipped?: boolean;
 }
 
 /**
@@ -40,14 +45,17 @@ export interface DocumentationResult {
 export class DocumentationGenerator {
   private config = getConfig();
   private openRouterClient: OpenRouterClient;
+  private updateExisting: boolean;
   
   /**
    * Creates a new documentation generator
    * @param apiKey OpenRouter API key (optional)
    * @param model LLM model to use (optional)
+   * @param updateExisting Whether to update existing documentation files (defaults to config value)
    */
-  constructor(apiKey?: string, model?: string) {
+  constructor(apiKey?: string, model?: string, updateExisting?: boolean) {
     this.openRouterClient = new OpenRouterClient(apiKey, model);
+    this.updateExisting = updateExisting !== undefined ? updateExisting : this.config.documentation.updateExisting;
   }
   
   /**
@@ -67,6 +75,18 @@ export class DocumentationGenerator {
     const docFilePath = path.join(directoryPath, this.config.documentation.outputFilename);
     const existingDocumentation = this.readExistingDocumentation(docFilePath);
     const isUpdate = existingDocumentation !== null;
+    
+    // Skip generation if the file exists and updateExisting is false
+    if (isUpdate && !this.updateExisting) {
+      console.log(`Skipping documentation for ${directoryPath} - File exists and updateExisting is false`);
+      return {
+        documentationPath: docFilePath,
+        success: true,
+        content: existingDocumentation as string,
+        isUpdate: false,
+        skipped: true
+      };
+    }
     
     // Convert analyzed files to format expected by OpenRouterClient
     const files = analysisResult.analyzedFiles.map((file) => ({

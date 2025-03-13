@@ -1,10 +1,11 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { DirectoryCrawler } from '../crawler/index.js';
 import { FileAnalyzer, AnalysisResult } from '../analyzer/index.js';
-import { DocumentationGenerator, DocumentationResult } from './generator.js';
+import { BaseTool, AutoToolResult } from './base-tool.js';
 
 /**
- * Result of the documentation aggregation process
+ * Result of the tool aggregation process
  */
 export interface AggregationResult {
   /**
@@ -13,29 +14,29 @@ export interface AggregationResult {
   totalDirectories: number;
   
   /**
-   * Number of directories successfully documented
+   * Number of directories successfully processed
    */
-  successfulDocumentations: number;
+  successfulGenerations: number;
   
   /**
-   * Number of directories that failed documentation
+   * Number of directories that failed processing
    */
-  failedDocumentations: number;
+  failedGenerations: number;
   
   /**
-   * Number of directories with undocumented.md files
+   * Number of directories with fallback files
    */
-  undocumentedFiles: number;
+  fallbackFiles: number;
   
   /**
    * Number of directories that were updated
    */
-  updatedDocumentations: number;
+  updatedGenerations: number;
   
   /**
    * Number of directories that were skipped (existing files when updateExisting is false)
    */
-  skippedDocumentations: number;
+  skippedGenerations: number;
   
   /**
    * Errors encountered during the process
@@ -49,43 +50,42 @@ export interface AggregationResult {
 export type ProgressCallback = (directory: string, fileCount: number, currentIndex: number, totalDirectories: number) => void;
 
 /**
- * Class for handling the bottom-up aggregation of documentation
+ * Class for handling the bottom-up aggregation process for auto-* tools
  */
-export class DocumentationAggregator {
+export class ToolAggregator {
   private crawler: DirectoryCrawler;
   private analyzer: FileAnalyzer;
-  private generator: DocumentationGenerator;
+  private tool: BaseTool<any>;
   
   /**
-   * Creates a new documentation aggregator
+   * Creates a new tool aggregator
    * @param rootPath The root directory to process
-   * @param apiKey OpenRouter API key (optional)
-   * @param model LLM model to use (optional)
+   * @param tool The tool to use for generating content
+   * @param updateExisting Whether to update existing files
    */
   constructor(
     private rootPath: string,
-    apiKey?: string,
-    model?: string,
+    tool: BaseTool<any>,
     private updateExisting: boolean = true
   ) {
     this.crawler = new DirectoryCrawler(rootPath, { respectGitignore: true });
     this.analyzer = new FileAnalyzer();
-    this.generator = new DocumentationGenerator(apiKey, model, updateExisting);
+    this.tool = tool;
   }
   
   /**
-   * Runs the full documentation aggregation process
+   * Runs the full aggregation process
    * @param progressCallback Optional callback for progress updates
    * @returns Results of the aggregation process
    */
   public async run(progressCallback?: ProgressCallback): Promise<AggregationResult> {
     const result: AggregationResult = {
       totalDirectories: 0,
-      successfulDocumentations: 0,
-      failedDocumentations: 0,
-      undocumentedFiles: 0,
-      updatedDocumentations: 0,
-      skippedDocumentations: 0,
+      successfulGenerations: 0,
+      failedGenerations: 0,
+      fallbackFiles: 0,
+      updatedGenerations: 0,
+      skippedGenerations: 0,
       errors: []
     };
     
@@ -115,23 +115,23 @@ export class DocumentationAggregator {
         // Check if directory has subdirectories
         const hasSubdirectories = this.crawler.hasSubdirectories(directoryPath);
         
-        // Check if directory should be documented
+        // Check if directory should be processed
         if (!this.analyzer.shouldDocument(directoryPath, files, hasSubdirectories)) {
-          console.log(`Skipping directory ${directoryPath} - Not enough code files to document or skipped due to rules`);
+          console.log(`Skipping directory ${directoryPath} - Not enough code files to process or skipped due to rules`);
           
-          // If this is a single-file directory, it will be included in its parent's documentation
+          // If this is a single-file directory, it will be included in its parent's processing
           continue;
         }
         
-        // Get documentation from subdirectories and single-file directories that weren't documented
-        const subdirDocs = this.crawler.getSubdirectoryDocs(directoryPath);
+        // Get content from subdirectories and single-file directories that weren't processed
+        const subdirContent = this.crawler.getSubdirectoryDocs(directoryPath);
         
-        // Get single-file subdirectories' content to include in this directory's documentation
-        const singleFileDocs = this.crawler.getSingleFileSubdirectories(directoryPath);
+        // Get single-file subdirectories' content to include in this directory's processing
+        const singleFileContent = this.crawler.getSingleFileSubdirectories(directoryPath);
         
         // Check if this is a directory with no code files but with subdirectories
         if (files.length === 0 && hasSubdirectories) {
-          console.log(`Processing directory ${directoryPath} - No code files, but contains subdirectories with documentation`);
+          console.log(`Processing directory ${directoryPath} - No code files, but contains subdirectories with content`);
         }
 
         // Analyze files (might be empty if directory only has subdirectories)
@@ -140,40 +140,44 @@ export class DocumentationAggregator {
         // Check if files are too large or too many
         if (analysisResult.limited) {
           console.log(`Directory ${directoryPath} exceeds limits: ${analysisResult.limitReason}`);
-          await this.generator.createUndocumentedFile(directoryPath, analysisResult);
-          result.undocumentedFiles++;
+          const fallbackContent = await this.tool.createFallbackContent(directoryPath, analysisResult);
+          // Get fallback filename from tool's public method
+          const fallbackFilename = this.tool.getFallbackFilename();
+          const fallbackPath = path.join(directoryPath, fallbackFilename);
+          await fs.promises.writeFile(fallbackPath, fallbackContent, 'utf8');
+          result.fallbackFiles++;
           continue;
         }
         
-        // Get all documentation from child directories (subdirectories and single-file directories)
-        const allChildDocs = [...subdirDocs];
+        // Get all content from child directories (subdirectories and single-file directories)
+        const allChildContent = [...subdirContent];
         
         // Add content from single-file subdirectories
-        if (singleFileDocs.length > 0) {
-          allChildDocs.push(...singleFileDocs);
+        if (singleFileContent.length > 0) {
+          allChildContent.push(...singleFileContent);
         }
         
-        // Generate documentation
+        // Generate content
         const isTopLevel = directoryPath === this.rootPath;
-        const docResult = await this.generateDocumentation(
+        const genResult = await this.generateContent(
           directoryPath,
           analysisResult,
           isTopLevel,
-          allChildDocs,
+          allChildContent,
           result
         );
         
-        if (docResult.skipped) {
-          result.skippedDocumentations++;
-          console.log(`Skipped existing documentation for ${directoryPath} (updateExisting=false)`);
-        } else if (docResult.isUpdate) {
-          result.updatedDocumentations++;
+        if (genResult.skipped) {
+          result.skippedGenerations++;
+          console.log(`Skipped existing content for ${directoryPath} (updateExisting=false)`);
+        } else if (genResult.isUpdate) {
+          result.updatedGenerations++;
         }
       }
       
       return result;
     } catch (error: any) {
-      console.error('Error during documentation aggregation:', error);
+      console.error('Error during aggregation:', error);
       result.errors.push({
         directory: this.rootPath,
         error: `Global error: ${error.message}`
@@ -183,52 +187,52 @@ export class DocumentationAggregator {
   }
   
   /**
-   * Generates documentation for a directory and updates the aggregation result
+   * Generates content for a directory and updates the aggregation result
    * @param directoryPath Path to the directory
    * @param analysisResult Results of file analysis
    * @param isTopLevel Whether this is the top level directory
-   * @param subdirDocs Documentation from subdirectories
+   * @param childContent Content from child directories
    * @param aggregationResult Aggregation result to update
-   * @returns Documentation generation result
+   * @returns Generation result
    */
-  private async generateDocumentation(
+  private async generateContent(
     directoryPath: string,
     analysisResult: AnalysisResult,
     isTopLevel: boolean,
-    subdirDocs: Array<{ path: string; content: string }>,
+    childContent: Array<{ path: string; content: string }>,
     aggregationResult: AggregationResult
-  ): Promise<DocumentationResult> {
+  ): Promise<AutoToolResult> {
     try {
-      const docResult = await this.generator.generateDocumentation(
+      const genResult = await this.tool.generate(
         directoryPath,
         analysisResult,
         isTopLevel,
-        subdirDocs
+        childContent
       );
       
-      if (docResult.success) {
-        console.log(`Successfully ${docResult.isUpdate ? 'updated' : 'generated'} documentation for ${directoryPath}`);
-        aggregationResult.successfulDocumentations++;
+      if (genResult.success) {
+        console.log(`Successfully ${genResult.isUpdate ? 'updated' : 'generated'} content for ${directoryPath}`);
+        aggregationResult.successfulGenerations++;
       } else {
-        console.error(`Failed to generate documentation for ${directoryPath}:`, docResult.error);
-        aggregationResult.failedDocumentations++;
+        console.error(`Failed to generate content for ${directoryPath}:`, genResult.error);
+        aggregationResult.failedGenerations++;
         aggregationResult.errors.push({
           directory: directoryPath,
-          error: docResult.error || 'Unknown error'
+          error: genResult.error || 'Unknown error'
         });
       }
       
-      return docResult;
+      return genResult;
     } catch (error: any) {
-      console.error(`Error generating documentation for ${directoryPath}:`, error);
-      aggregationResult.failedDocumentations++;
+      console.error(`Error generating content for ${directoryPath}:`, error);
+      aggregationResult.failedGenerations++;
       aggregationResult.errors.push({
         directory: directoryPath,
         error: error.message
       });
       
       return {
-        documentationPath: path.join(directoryPath, 'documentation.md'),
+        outputPath: path.join(directoryPath, this.tool.getOutputFilename()),
         success: false,
         content: '',
         error: error.message,
