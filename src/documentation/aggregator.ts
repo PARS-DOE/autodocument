@@ -122,7 +122,12 @@ export class DocumentationAggregator {
         // Get single-file subdirectories' content to include in this directory's documentation
         const singleFileDocs = this.crawler.getSingleFileSubdirectories(directoryPath);
         
-        // Analyze files
+        // Check if this is a directory with no code files but with subdirectories
+        if (files.length === 0 && hasSubdirectories) {
+          console.log(`Processing directory ${directoryPath} - No code files, but contains subdirectories with documentation`);
+        }
+
+        // Analyze files (might be empty if directory only has subdirectories)
         const analysisResult = await this.analyzer.analyzeFiles(directoryPath, files);
         
         // Check if files are too large or too many

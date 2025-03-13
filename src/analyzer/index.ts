@@ -129,8 +129,24 @@ export class FileAnalyzer {
       return false;
     }
     
+    // If directory has no code files but has subdirectories, we should still document
+    // to synthesize information from subdirectory documentation
+    if (codeFiles.length === 0 && hasSubdirectories) {
+      return true;
+    }
+    
     // Need at least 1 code file to document
     return codeFiles.length > 0;
+  }
+
+  /**
+   * A simple function to test if the analyzer would document an empty directory with subdirectories
+   * This can be invoked manually to verify the fix is working
+   * @param hasSubdirectories Whether the directory has subdirectories
+   * @returns Whether the directory should be documented
+   */
+  public testShouldDocumentEmptyDirWithSubdirs(hasSubdirectories: boolean): boolean {
+    return this.shouldDocument("/test/path", [], hasSubdirectories);
   }
   
   /**

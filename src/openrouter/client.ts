@@ -88,10 +88,16 @@ export class OpenRouterClient {
       }
 
       // Prepare user message
-      let userMessage = "Generate comprehensive but concise documentation for the following code files:";
+      let userMessage;
       
-      if (fileContents) {
-        userMessage += `\n\n${fileContents}`;
+      if (files.length === 0 && childrenDocs && childrenDocs.length > 0) {
+        userMessage = "Generate documentation that synthesizes and summarizes information from the following subdirectory documentation files. This directory contains no code files itself, but needs documentation that aggregates information from its subdirectories:";
+      } else {
+        userMessage = "Generate comprehensive but concise documentation for the following code files:";
+        
+        if (fileContents) {
+          userMessage += `\n\n${fileContents}`;
+        }
       }
       
       if (childrenDocsContent) {
