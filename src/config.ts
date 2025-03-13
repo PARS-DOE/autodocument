@@ -1,5 +1,8 @@
 /**
  * Configuration for the autodocument MCP server.
+ *
+ * Note: Prompt configurations are stored in src/prompt-config.ts.
+ * For customizing the prompts used by the auto-* tools, modify that file.
  */
 export interface AutodocumentConfig {
   // OpenRouter settings
@@ -17,13 +20,22 @@ export interface AutodocumentConfig {
     maxFileSizeKb: number;
     maxFilesPerDirectory: number;
   };
-
-  // Documentation settings
-  documentation: {
-    outputFilename: string;
-    fallbackFilename: string;
-  };
+// Documentation settings
+documentation: {
+  outputFilename: string;
+  fallbackFilename: string;
+  updateExisting: boolean;
+};
 }
+
+/**
+* Note: Tool-specific prompts are defined in src/prompt-config.ts
+* This includes prompts for:
+* - Documentation generation
+* - Test plan generation
+* - And future auto-* tools
+*/
+
 
 /**
  * Default configuration values for the autodocument MCP server.
@@ -46,6 +58,7 @@ export const defaultConfig: AutodocumentConfig = {
   documentation: {
     outputFilename: 'documentation.md',
     fallbackFilename: 'undocumented.md',
+    updateExisting: true,
   },
 };
 

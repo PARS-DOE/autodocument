@@ -7,36 +7,45 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { DocumentationAggregator } from './documentation/aggregator.js';
 import { getConfig } from './config.js';
+import { ToolRegistry } from './tools/registry.js';
+import { ToolAggregator } from './tools/aggregator.js';
 
-interface GenerateDocumentationArgs {
+/**
+ * Generic interface for auto-* tool arguments
+ */
+interface AutoToolArgs {
   path: string;
   openRouterApiKey?: string;
   model?: string;
+  updateExisting?: boolean;
 }
 
 /**
- * Validates the arguments for the generate_documentation tool
+ * Validates the arguments for auto-* tools
  */
-function isValidGenerateDocumentationArgs(args: any): args is GenerateDocumentationArgs {
+function isValidAutoToolArgs(args: any): args is AutoToolArgs {
   return (
     typeof args === 'object' &&
     args !== null &&
     typeof args.path === 'string' &&
     (args.openRouterApiKey === undefined || typeof args.openRouterApiKey === 'string') &&
-    (args.model === undefined || typeof args.model === 'string')
+    (args.model === undefined || typeof args.model === 'string') &&
+    (args.updateExisting === undefined || typeof args.updateExisting === 'boolean')
   );
 }
 
 /**
- * Main MCP server class for the autodocument tool
+ * Main MCP server class for the autodocument tools
  */
 class AutodocumentServer {
   private server: Server;
   private config = getConfig();
+  private toolRegistry: ToolRegistry;
 
   constructor() {
+    // Initialize tool registry
+    this.toolRegistry = new ToolRegistry(this.config.openRouter.apiKey, this.config.openRouter.model);
     this.server = new Server(
       {
         name: 'autodocument-server',
@@ -65,58 +74,41 @@ class AutodocumentServer {
   private setupToolHandlers() {
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
-        {
-          name: 'generate_documentation',
-          description: 'Generates documentation for a code repository by recursively analyzing directories and files',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              path: {
-                type: 'string',
-                description: 'Path to the directory to analyze',
-              },
-              openRouterApiKey: {
-                type: 'string',
-                description: 'OpenRouter API key (optional, can also be set in environment variable)',
-              },
-              model: {
-                type: 'string',
-                description: 'LLM model to use (optional, defaults to Claude 3.7)',
-              },
-            },
-            required: ['path'],
-          },
-        },
-      ],
+      tools: this.toolRegistry.getToolSchemas(),
     }));
 
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      if (request.params.name !== 'generate_documentation') {
+      // Check if the tool exists
+      if (!this.toolRegistry.hasTool(request.params.name)) {
         throw new McpError(
           ErrorCode.MethodNotFound,
           `Unknown tool: ${request.params.name}`
         );
       }
 
-      if (!isValidGenerateDocumentationArgs(request.params.arguments)) {
+      // Validate arguments
+      if (!isValidAutoToolArgs(request.params.arguments)) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          'Invalid arguments for generate_documentation tool'
+          `Invalid arguments for ${request.params.name} tool. Expected: path (string), openRouterApiKey? (string), model? (string), updateExisting? (boolean)`
         );
       }
 
-      const { path, openRouterApiKey, model } = request.params.arguments;
+      const { path, openRouterApiKey, model, updateExisting } = request.params.arguments;
+      const toolName = request.params.name;
 
       try {
-        console.log(`Starting documentation generation for directory: ${path}`);
+        console.log(`Starting ${toolName} for directory: ${path} (updateExisting: ${updateExisting ?? 'default'})`);
+        
+        // Get the tool from the registry
+        const tool = this.toolRegistry.getTool(toolName);
         
         // Create an aggregator with the provided arguments
-        const aggregator = new DocumentationAggregator(
+        const aggregator = new ToolAggregator(
           path,
-          openRouterApiKey || this.config.openRouter.apiKey,
-          model || this.config.openRouter.model
+          tool,
+          updateExisting
         );
         
         // Get progress token from the request metadata if available
@@ -136,11 +128,11 @@ class AutodocumentServer {
           }
         };
         
-        // Run the documentation process with progress updates
+        // Run the tool process with progress updates
         const result = await aggregator.run(progressCallback);
         
         // Format the result for display
-        const resultSummary = this.formatResultSummary(result);
+        const resultSummary = tool.formatResultSummary(result);
         
         return {
           content: [
@@ -166,36 +158,7 @@ class AutodocumentServer {
     });
   }
 
-  /**
-   * Formats the aggregation result for display
-   * @param result Aggregation result to format
-   * @returns Formatted result as a string
-   */
-  private formatResultSummary(result: any): string {
-    let summary = `# Documentation Generation Complete\n\n`;
-    
-    summary += `## Summary\n\n`;
-    summary += `- Total directories processed: ${result.totalDirectories}\n`;
-    summary += `- Successful documentations: ${result.successfulDocumentations}\n`;
-    summary += `- Updated documentations: ${result.updatedDocumentations}\n`;
-    summary += `- Failed documentations: ${result.failedDocumentations}\n`;
-    summary += `- Undocumented files created: ${result.undocumentedFiles}\n\n`;
-    
-    if (result.errors.length > 0) {
-      summary += `## Errors\n\n`;
-      for (const error of result.errors) {
-        summary += `- **${error.directory}**: ${error.error}\n`;
-      }
-      summary += '\n';
-    }
-    
-    summary += `## Next Steps\n\n`;
-    summary += `- Review the generated documentation.md files\n`;
-    summary += `- Manually update any undocumented.md files if needed\n`;
-    summary += `- Consider adjusting configuration parameters if too many files were skipped\n`;
-    
-    return summary;
-  }
+  // No more need for formatResultSummary here - it's now handled by each tool
 
   /**
    * Starts the MCP server

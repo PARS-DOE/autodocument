@@ -8,14 +8,17 @@ An MCP (Model Context Protocol) server that automatically generates documentatio
 - **Smart Directory Analysis**: Recursively analyzes directories and files in a code repository
 - **Git Integration**: Respects `.gitignore` patterns to skip ignored files
 - **AI-Powered Documentation**: Uses OpenRouter API (with Claude 3.7 by default) to generate comprehensive documentation
+- **Test Plan Generation**: Automatically creates test plans with suitable test types, edge cases, and mock requirements
+- **Code Review**: Performs senior developer-level code reviews focused on security, best practices, and improvements
 - **Bottom-Up Approach**: Starts with leaf directories and works upward, creating a coherent documentation hierarchy
-- **Intelligent File Handling**: 
-  - Creates `documentation.md` files at each directory level
-  - Skips single-file directories but includes their content in parent documentation
-  - Supports updating existing documentation files
-  - Creates fallback `undocumented.md` files for directories that exceed limits
+- **Intelligent File Handling**:
+  - Creates `documentation.md`, `testplan.md`, and `review.md` files at each directory level
+  - Skips single-file directories but includes their content in parent outputs
+  - Supports updating existing files
+  - Creates fallback files for directories that exceed limits
 - **Progress Reporting**: Provides detailed progress updates to prevent timeouts in long-running operations
-- **Highly Configurable**: Customize file extensions, size limits, models, and more
+- **Highly Configurable**: Customize file extensions, size limits, models, prompts, and more
+- **Extensible Architecture**: Modular design makes it easy to add more auto-* tools in the future
 
 ## Installation
 
@@ -108,9 +111,19 @@ Roo Code and Cline are AI assistants that support the Model Context Protocol (MC
 4. **Restart Roo/Cline or the Claude desktop app**
 
 4. **Use the tool**:
-   In a conversation with Roo or Claude, you can now ask it to generate documentation for your code repository:
+   In a conversation with Roo or Claude, you can now ask it to generate documentation or test plans for your code repository:
    ```
    Please generate documentation for my project at /path/to/my/project
+   ```
+   
+   Or for test plans:
+   ```
+   Please create a test plan for my project at /path/to/my/project
+   ```
+   
+   Or for code reviews:
+   ```
+   Please review the code in my project at /path/to/my/project
    ```
 
 ## How It Works
@@ -138,8 +151,10 @@ The project follows a modular architecture:
 - **Core Components**: Configuration management and server implementation
 - **Crawler Module**: Directory traversal and file discovery
 - **Analyzer Module**: Code file analysis and filtering
-- **OpenRouter Module**: AI integration for documentation generation
+- **OpenRouter Module**: AI integration for LLM-based content generation
 - **Documentation Module**: Orchestration of the documentation process
+- **Tools Module**: Extensible system for different auto-* tools (documentation, test plans, etc.)
+- **Prompts Configuration**: Centralized prompt management for easy customization
 
 ## Example Usage
 
@@ -197,9 +212,57 @@ serverProcess.stdin.write(toolCallCommand + '\n');
 // ...
 ```
 
+## Customizing Prompts
+
+You can easily customize the prompts used by the tools by editing the `src/prompt-config.ts` file. This allows you to:
+
+- Adjust the tone and style of generated content
+- Add specific instructions for your project's needs
+- Modify how existing content is updated
+
+The prompt configuration is separated from the tool implementation, making it easy to experiment with different prompts without changing the code.
+
+## Available Tools
+
+### generate_documentation
+
+Generates comprehensive documentation for a code repository:
+```
+{
+  "path": "/path/to/your/project",
+  "openRouterApiKey": "your-api-key-here", // Optional
+  "model": "anthropic/claude-3-7-sonnet", // Optional
+  "updateExisting": true // Optional, defaults to true
+}
+```
+
+### autotestplan
+
+Generates test plans for functions and components in a code repository:
+```
+{
+  "path": "/path/to/your/project",
+  "openRouterApiKey": "your-api-key-here", // Optional
+  "model": "anthropic/claude-3-7-sonnet", // Optional
+  "updateExisting": true // Optional, defaults to true
+}
+```
+
+### autoreview
+
+Generates a senior developer-level code review for a repository:
+```
+{
+  "path": "/path/to/your/project",
+  "openRouterApiKey": "your-api-key-here", // Optional
+  "model": "anthropic/claude-3-7-sonnet", // Optional
+  "updateExisting": true // Optional, defaults to true
+}
+```
+
 ## Output Files
 
-The server creates two types of documentation files:
+The server creates several types of output files:
 
 ### documentation.md
 
@@ -209,12 +272,34 @@ Contains comprehensive documentation of the code in a directory, including:
 - Relationships between files
 - Integration with child components
 
-### undocumented.md
+### testplan.md
 
-Created when a directory exceeds size or file count limits, containing:
-- Reason for skipping documentation
+Contains detailed test plans for code in a directory, including:
+- Appropriate test types (unit, integration, e2e) for each function
+- Common edge cases to test
+- Dependency mocking requirements
+- Integration testing strategies
+
+### review.md
+
+Contains senior developer-level code review feedback, including:
+- Security issues and vulnerabilities
+- Best practice violations
+- Potential bugs or architectural concerns
+- Opportunities for refactoring
+- Practical, constructive feedback (not nitpicking style issues)
+
+### Fallback Files
+
+Created when a directory exceeds size or file count limits:
+- `undocumented.md` - For documentation generation
+- `untested.md` - For test plan generation
+- `review-skipped.md` - For code review generation
+
+These files contain:
+- Reason for skipping processing
 - List of files that were analyzed and excluded
-- Instructions on how to fix (increase limits or manually document)
+- Instructions on how to fix (increase limits or manually create content)
 
 ## Troubleshooting
 
@@ -243,3 +328,13 @@ CC0-1.0 License - This work is dedicated to the public domain under CC0 by the U
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Adding New Tools
+
+The architecture is designed to make it easy to add new auto-* tools:
+
+1. Create a new class that extends `BaseTool` in the `src/tools` directory
+2. Define the prompts in `src/prompt-config.ts`
+3. Register the tool in the `ToolRegistry`
+
+See the existing tools for examples of how to implement new functionality.
