@@ -115,8 +115,8 @@ export class OpenRouterClient {
       });
 
       // Extract generated documentation
-      const generatedContent = completion.choices[0].message.content || '';
-      
+      const choice = completion.choices?.[0];
+      const generatedContent = choice?.message?.content || '';
       return {
         content: generatedContent,
         successful: true
