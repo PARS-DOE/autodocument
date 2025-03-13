@@ -1,0 +1,35 @@
+{
+  "name": "autodocument",
+  "version": "1.0.0",
+  "description": "MCP server for automatic documentation generation using OpenRouter",
+  "main": "build/index.js",
+  "type": "module",
+  "bin": {
+    "autodocument": "build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "start": "node build/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "documentation",
+    "mcp",
+    "openrouter",
+    "llm"
+  ],
+  "author": "United States Department of Energy",
+  "license": "CC0-1.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.1.0",
+    "axios": "^1.6.0",
+    "ignore": "^5.3.0",
+    "openai": "^4.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.9",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}
