@@ -4,6 +4,7 @@
 export class BaseTool {
     constructor(config) {
         this.config = config;
+        this.name = this.constructor.name || 'Tool';
     }
     /**
      * Get the output filename for this tool
